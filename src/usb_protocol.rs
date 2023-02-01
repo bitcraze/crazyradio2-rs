@@ -175,9 +175,7 @@ impl UsbProtocol {
     }
 
     pub fn send(&self, data: &[u8]) -> Result<()> {
-        dbg!(data);
-        self.tx_queue.send(data.to_vec())?;
-        Ok(())
+        self.tx_queue.send(data.to_vec()).map_err(Error::DeviceTxError)
     }
 
     pub fn recv(&self) -> Result<Vec<u8>> {
