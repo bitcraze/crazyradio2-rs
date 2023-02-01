@@ -121,8 +121,7 @@ impl UsbProtocol {
             let mut buffer = [0u8; PROTOCOL_MTU];
             loop {
                 let len = loop {
-                    match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100))
-                    {
+                    match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100)) {
                         Ok(len) => break len,
                         Err(rusb::Error::Timeout) => continue,
                         Err(e) => return Err(Error::UsbError(e)),
@@ -132,8 +131,7 @@ impl UsbProtocol {
                 let mut slice = &buffer[..len];
 
                 while !slice.is_empty() {
-                    let packet_len =
-                        u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
+                    let packet_len = u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
                     let packet = slice[2..2 + packet_len].to_vec();
                     slice = &slice[2 + packet_len..];
 
@@ -142,11 +140,7 @@ impl UsbProtocol {
             }
         });
 
-
-        Ok(UsbProtocol {
-            tx_queue,
-            rx_queue,
-        })
+        Ok(UsbProtocol { tx_queue, rx_queue })
     }
 
     fn reset(
@@ -175,7 +169,9 @@ impl UsbProtocol {
     }
 
     pub fn send(&self, data: &[u8]) -> Result<()> {
-        self.tx_queue.send(data.to_vec()).map_err(Error::DeviceTxError)
+        self.tx_queue
+            .send(data.to_vec())
+            .map_err(Error::DeviceTxError)
     }
 
     pub fn recv(&self) -> Result<Vec<u8>> {
