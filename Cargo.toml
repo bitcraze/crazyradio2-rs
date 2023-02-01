@@ -1,0 +1,15 @@
+[package]
+name = "crazyradio2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ciborium = "0.2.0"
+flume = "0.10.14"
+rusb = { version = "0.9.1", features = ["vendored"] }
+thiserror = "1.0.38"
+
+[dev-dependencies]
+anyhow = { version = "1.0.68", features = ["backtrace"] }
