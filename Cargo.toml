@@ -9,6 +9,7 @@ edition = "2021"
 ciborium = "0.2.0"
 flume = "0.10.14"
 rusb = { version = "0.9.1", features = ["vendored"] }
+serde = "1.0.152"
 thiserror = "1.0.38"
 
 [dev-dependencies]

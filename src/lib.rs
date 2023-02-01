@@ -1,5 +1,6 @@
 mod crazyradio2;
 mod error;
+mod rpc;
 mod usb_protocol;
 
 pub use crazyradio2::Crazyradio2;

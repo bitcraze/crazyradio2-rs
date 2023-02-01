@@ -1,27 +1,31 @@
-use std::collections::HashMap;
-
-use ciborium::{cbor, ser::into_writer, value::Value};
+use ciborium::value::Value;
 use crazyradio2::Crazyradio2;
 
 fn main() -> anyhow::Result<()> {
     let radio = Crazyradio2::new()?;
 
-    let request = cbor!([0, 0, "well-known.methods", null])?;
-    let mut request_bytes = vec![];
-    into_writer(&request, &mut request_bytes)?;
+    // let methods: HashMap<String, u32> = radio.rpc.call("well-known.methods", Value::Null)?;
 
-    dbg!(&request);
+    let available_modes: Vec<String> = radio.rpc.call("radioMode.list", Value::Null)?;
+    println!("{:#?}", available_modes);
+    radio.rpc.call("radioMode.set", "esb")?;
 
-    radio.device.send(&request_bytes)?;
-    let data = radio.device.recv()?;
+    let address = vec![0xe7, 0xe7, 0xe7, 0xad, 0x42];
 
-    println!("{:?}", data);
+    for channel in 0..=100 {
+        let (acked, _, rssi): (bool, Option<Value>, i8) = radio.rpc.call(
+            "esb.sendPacket",
+            (
+                channel,
+                Value::Bytes(address.clone()),
+                Value::Bytes(vec![0xff]),
+            ),
+        )?;
 
-    let response: (u32, u32, Value, HashMap<String, u32>) =
-        ciborium::de::from_reader(data.as_slice())?;
-    dbg!(&response);
-
-    // dbg!(serde_cbor::from_slice(&data).unwrap());
+        if acked {
+            println!("Found Crazyflie on channel {}, Rssi {}", channel, rssi);
+        }
+    }
 
     Ok(())
 }

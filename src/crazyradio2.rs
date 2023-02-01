@@ -1,9 +1,9 @@
 use rusb::{Device, GlobalContext};
 
-use crate::{error::Error, usb_protocol::UsbProtocol};
+use crate::{error::Error, rpc::Rpc, usb_protocol::UsbProtocol};
 
 pub struct Crazyradio2 {
-    pub device: UsbProtocol,
+    pub rpc: Rpc,
 }
 
 impl Crazyradio2 {
@@ -28,6 +28,8 @@ impl Crazyradio2 {
 
         let device = UsbProtocol::new(device)?;
 
-        Ok(Crazyradio2 { device })
+        let rpc = Rpc::new(device);
+
+        Ok(Crazyradio2 { rpc })
     }
 }
