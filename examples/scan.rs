@@ -1,29 +1,30 @@
+use std::collections::HashMap;
+
 use ciborium::value::Value;
 use crazyradio2::Crazyradio2;
 
 fn main() -> anyhow::Result<()> {
     let radio = Crazyradio2::new()?;
 
-    // let methods: HashMap<String, u32> = radio.rpc.call("well-known.methods", Value::Null)?;
+    let methods: HashMap<String, u32> = radio.rpc.call("well-known.methods", Value::Null)?;
+    println!("{:#?}", methods);
 
-    let available_modes: Vec<String> = radio.rpc.call("radioMode.list", Value::Null)?;
+    radio.rpc.call("led.set", (false, false, false))?;
+
+    let pressed: bool = radio.rpc.call("button.get", Value::Null)?;
+    dbg!(pressed);
+
+    let available_modes = radio.radio_mode_list()?;
     println!("{:#?}", available_modes);
-    radio.rpc.call("radioMode.set", "esb")?;
+    radio.radio_mode_set("esb")?;
 
-    let address = vec![0xe7, 0xe7, 0xe7, 0xad, 0x42];
+    let address = [0xe7, 0xe7, 0xe7, 0xad, 0x42];
 
     for channel in 0..=100 {
-        let (acked, _, rssi): (bool, Option<Value>, i8) = radio.rpc.call(
-            "esb.sendPacket",
-            (
-                channel,
-                Value::Bytes(address.clone()),
-                Value::Bytes(vec![0xff]),
-            ),
-        )?;
+        let ack = radio.esb_send_packet(channel, &address, &[0xff])?;
 
-        if acked {
-            println!("Found Crazyflie on channel {}, Rssi {}", channel, rssi);
+        if ack.acked {
+            println!("Found Crazyflie on channel {}, Rssi {}", channel, ack.rssi);
         }
     }
 

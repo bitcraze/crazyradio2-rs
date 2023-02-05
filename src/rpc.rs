@@ -8,6 +8,8 @@ use ciborium::{cbor, de::from_reader, ser::into_writer, value::Value};
 
 use thiserror::Error;
 
+pub const NULL: Value = Value::Null;
+
 #[derive(Error, Debug)]
 pub enum RpcError {
     #[error("RPC Error response: {0}")]
