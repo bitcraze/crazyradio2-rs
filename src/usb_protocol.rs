@@ -63,7 +63,7 @@ fn find_endpoints(mut interfaces: Interfaces) -> Result<(u8, u8)> {
 }
 
 impl UsbProtocol {
-    pub fn new(device: DeviceHandle<GlobalContext>) -> crate::Result<Self> {
+    pub fn new(mut device: DeviceHandle<GlobalContext>) -> crate::Result<Self> {
         // Verify protocol version
         let mut version_buffer = [0];
         device.read_control(
@@ -85,6 +85,7 @@ impl UsbProtocol {
         // Extract endpoints addresse from the descriptor
         let (in_endpoint, out_endpoint) =
             find_endpoints(device.device().active_config_descriptor()?.interfaces())?;
+        device.claim_interface(0)?;
         let device = Arc::new(device);
 
         // Reset protocol
