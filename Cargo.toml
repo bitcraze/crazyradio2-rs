@@ -14,3 +14,4 @@ thiserror = "1.0.38"
 
 [dev-dependencies]
 anyhow = { version = "1.0.68", features = ["backtrace"] }
+rayon = "1.6.1"
