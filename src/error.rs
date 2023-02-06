@@ -22,4 +22,7 @@ pub enum Error {
 
     #[error("Device Tx error")]
     DeviceTxError(#[from] flume::SendError<Vec<u8>>),
+
+    #[error("Radio dongle disconnected")]
+    Disconnected,
 }

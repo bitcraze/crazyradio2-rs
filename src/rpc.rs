@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicU64, Arc, RwLock},
-    thread::spawn,
+    thread::{spawn, JoinHandle},
 };
 
 use ciborium::{cbor, de::from_reader, ser::into_writer, value::Value};
@@ -58,8 +58,8 @@ impl Rpc {
         {
             let device = device.clone();
             let current_calls = current_calls.clone();
-            spawn(move || loop {
-                let data = device.recv().unwrap();
+            let _: JoinHandle<Result<(), RpcError>> = spawn(move || loop {
+                let data = device.recv()?;
                 let (_, sequence, error, result): (u32, u64, Value, Value) =
                     from_reader(data.as_slice()).unwrap();
 
@@ -129,5 +129,10 @@ impl Rpc {
         }?;
 
         Ok(response)
+    }
+
+    pub(crate) fn close(&self) {
+        self.device.close();
+        // Threads are going to close by themself directly.
     }
 }

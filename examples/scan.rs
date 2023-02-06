@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use ciborium::value::Value;
 use crazyradio2::Crazyradio2;
@@ -6,12 +6,18 @@ use crazyradio2::Crazyradio2;
 fn main() -> anyhow::Result<()> {
     let radio = Crazyradio2::new()?;
 
-    let methods: HashMap<String, u32> = radio.rpc.call("well-known.methods", Value::Null)?;
+    let methods: HashMap<String, u32> = radio
+        .rpc
+        .call("well-known.methods", Value::Null)?;
     println!("{:#?}", methods);
 
-    radio.rpc.call("led.set", (false, false, false))?;
+    radio
+        .rpc
+        .call("led.set", (false, false, false))?;
 
-    let pressed: bool = radio.rpc.call("button.get", Value::Null)?;
+    let pressed: bool = radio
+        .rpc
+        .call("button.get", Value::Null)?;
     dbg!(pressed);
 
     let available_modes = radio.radio_mode_list()?;
@@ -27,6 +33,12 @@ fn main() -> anyhow::Result<()> {
             println!("Found Crazyflie on channel {}, Rssi {}", channel, ack.rssi);
         }
     }
+
+    radio.close();
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    let _radio = Crazyradio2::new()?;
 
     Ok(())
 }

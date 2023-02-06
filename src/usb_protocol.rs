@@ -2,7 +2,11 @@
 // The USB protocol handles individuals USB packets and abstracts packet
 // size to make it appear as a high MTU-capable link.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicBool, Arc},
+    thread::{JoinHandle, self},
+    time::Duration,
+};
 
 use crate::{Error, Result};
 
@@ -20,6 +24,9 @@ const PROTOCOL_VERSION: u8 = 0;
 pub struct UsbProtocol {
     tx_queue: Sender<Vec<u8>>,
     rx_queue: Receiver<Vec<u8>>,
+    rx_thread: JoinHandle<Result<()>>,
+    tx_thread: JoinHandle<Result<()>>,
+    close: Arc<AtomicBool>,
 }
 
 fn find_endpoints(mut interfaces: Interfaces) -> Result<(u8, u8)> {
@@ -83,18 +90,31 @@ impl UsbProtocol {
         // Reset protocol
         UsbProtocol::reset(device.as_ref(), in_endpoint, out_endpoint)?;
 
+        // Closing flag
+        let close = Arc::new(AtomicBool::new(false));
+
         // TX thread
         let (tx_queue, tx_rcv) = flume::unbounded::<Vec<u8>>();
-        {
+        let rx_thread = {
             let device = device.clone();
+            let close = close.clone();
             spawn::<_, Result<()>>(move || {
                 let mut leftover_packet = None;
                 loop {
+                    if close.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Ok(());
+                    }
+
                     // Use previously unqueued packet if available, wait for a new one otherwise
                     let packet = if let Some(packet) = leftover_packet.take() {
                         packet
                     } else {
-                        tx_rcv.recv()?
+                        // Never block forever to be able to look at the close flag
+                        match tx_rcv.recv_timeout(Duration::from_millis(100)) {
+                            Ok(pk) => pk,
+                            Err(flume::RecvTimeoutError::Timeout) => continue,
+                            Err(flume::RecvTimeoutError::Disconnected) => return Ok(()),
+                        }
                     };
 
                     let mut buffer = (packet.len() as u16).to_le_bytes().to_vec();
@@ -112,35 +132,49 @@ impl UsbProtocol {
 
                     device.write_bulk(out_endpoint, &buffer, Duration::from_millis(100))?;
                 }
-            });
-        }
+            })
+        };
 
         // RX thread
         let (rx_snd, rx_queue) = flume::unbounded::<Vec<u8>>();
-        spawn::<_, Result<()>>(move || {
-            let mut buffer = [0u8; PROTOCOL_MTU];
-            loop {
-                let len = loop {
-                    match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100)) {
-                        Ok(len) => break len,
-                        Err(rusb::Error::Timeout) => continue,
-                        Err(e) => return Err(Error::UsbError(e)),
+        let tx_thread = {
+            let close = close.clone();
+            spawn::<_, Result<()>>(move || {
+                let mut buffer = [0u8; PROTOCOL_MTU];
+                loop {
+                    let len = loop {
+                        if close.load(std::sync::atomic::Ordering::Relaxed) {
+                            return Ok(());
+
+                        }
+
+                        match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100)) {
+                            Ok(len) => break len,
+                            Err(rusb::Error::Timeout) => continue,
+                            Err(e) => return Err(Error::UsbError(e)),
+                        }
+                    };
+
+                    let mut slice = &buffer[..len];
+
+                    while !slice.is_empty() {
+                        let packet_len = u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
+                        let packet = slice[2..2 + packet_len].to_vec();
+                        slice = &slice[2 + packet_len..];
+
+                        rx_snd.send(packet)?;
                     }
-                };
-
-                let mut slice = &buffer[..len];
-
-                while !slice.is_empty() {
-                    let packet_len = u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
-                    let packet = slice[2..2 + packet_len].to_vec();
-                    slice = &slice[2 + packet_len..];
-
-                    rx_snd.send(packet)?;
                 }
-            }
-        });
+            })
+        };
 
-        Ok(UsbProtocol { tx_queue, rx_queue })
+        Ok(UsbProtocol {
+            tx_queue,
+            rx_queue,
+            rx_thread,
+            tx_thread,
+            close,
+        })
     }
 
     fn reset(
@@ -176,5 +210,15 @@ impl UsbProtocol {
 
     pub fn recv(&self) -> Result<Vec<u8>> {
         self.rx_queue.recv().map_err(Error::DeviceRxError)
+    }
+
+    pub(crate) fn close(&self) {
+        self.close.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // This madness is required to keep the close function taking &self
+        // but still waiting for the threads to close
+        while !self.tx_thread.is_finished() || !self.rx_thread.is_finished() {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
