@@ -4,7 +4,7 @@
 
 use std::{
     sync::{atomic::AtomicBool, Arc},
-    thread::{JoinHandle, self},
+    thread::{self, JoinHandle},
     time::Duration,
 };
 
@@ -122,13 +122,15 @@ impl UsbProtocol {
 
                     // Try to receive more packets from the queue until none are available or the buffer will go over PROTOCOL_MTU
                     while let Ok(packet) = tx_rcv.try_recv() {
-                        if buffer.len() + packet.len() > PROTOCOL_MTU {
+                        if buffer.len() + 2 + packet.len() > PROTOCOL_MTU {
                             leftover_packet = Some(packet);
                             break;
                         }
-
+                        buffer.extend_from_slice(&(packet.len() as u16).to_le_bytes());
                         buffer.extend_from_slice(&packet);
                     }
+
+                    // println!("Sending: {:?}", &buffer);
 
                     device.write_bulk(out_endpoint, &buffer, Duration::from_millis(100))?;
                 }
@@ -139,31 +141,48 @@ impl UsbProtocol {
         let (rx_snd, rx_queue) = flume::unbounded::<Vec<u8>>();
         let tx_thread = {
             let close = close.clone();
+            let mut leftover: Option<Vec<u8>> = None;
             spawn::<_, Result<()>>(move || {
                 let mut buffer = [0u8; PROTOCOL_MTU];
                 loop {
                     let len = loop {
                         if close.load(std::sync::atomic::Ordering::Relaxed) {
                             return Ok(());
-
                         }
 
-                        match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100)) {
+                        // println!("Receiving ...");
+                        match device.read_bulk(in_endpoint, &mut buffer, Duration::from_millis(100))
+                        {
                             Ok(len) => break len,
                             Err(rusb::Error::Timeout) => continue,
                             Err(e) => return Err(Error::UsbError(e)),
                         }
                     };
 
-                    let mut slice = &buffer[..len];
+                    // println!("Received: {:?} (len {})", &buffer[..len], len);
+
+                    let to_handle = if let Some(leftover) = leftover.take() {
+                        Vec::from_iter(leftover.into_iter().chain((&buffer[..len]).iter().cloned()))
+                    } else {
+                        buffer[..len].to_vec()
+                    };
+                    let mut slice = to_handle.as_slice();
 
                     while !slice.is_empty() {
-                        let packet_len = u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
+                        let packet_len =
+                            u16::from_le_bytes(slice[..2].try_into().unwrap()) as usize;
+
+                        if slice.len() < (packet_len + 2) {
+                            leftover = Some(Vec::from_iter(slice.iter().cloned()));
+                            break;
+                        }
                         let packet = slice[2..2 + packet_len].to_vec();
                         slice = &slice[2 + packet_len..];
 
                         rx_snd.send(packet)?;
                     }
+
+                    // println!("Leftover: {:?}", &leftover);
                 }
             })
         };
